@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>dotnet-SNUS.ConsensusService-f525678e-564a-4fe4-9f82-82addee7918f</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.15" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SNUS.Shared\SNUS.Shared.csproj" />
+    <ProjectReference Include="..\SNUS.Persistence\SNUS.Persistence.csproj" />
+  </ItemGroup>
+</Project>

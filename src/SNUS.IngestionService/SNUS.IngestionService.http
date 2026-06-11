@@ -1,0 +1,6 @@
+@SNUS.IngestionService_HostAddress = http://localhost:5225
+
+GET {{SNUS.IngestionService_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
