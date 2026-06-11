@@ -1,11 +1,10 @@
 # SNUS Project 2026
+Distributed sensor monitoring system for collecting, processing and storing temperature readings from sensor nodes.
 
 ## Team members
 - Marko Pavlovic, SV5/2023,
 - Ognjen Miletic, SV47/2023,
 - Lazar Vilotic, SV51/2023 
-
-Distributed sensor monitoring system for collecting, processing and storing temperature readings from sensor nodes.
 
 ## Project Structure
 
