@@ -14,6 +14,7 @@ namespace SNUS.Shared.DTOs
         private long? readingId;
         private string sensorId = string.Empty;
         private AlarmPriority alarmPriority = AlarmPriority.None;
+        private long lastValidMessageId;
 
         public bool Success
         {
@@ -43,6 +44,12 @@ namespace SNUS.Shared.DTOs
         {
             get { return alarmPriority; }
             set { alarmPriority = value; }
+        }
+
+        public long LastValidMessageId 
+        {
+            get { return lastValidMessageId; }
+            set { lastValidMessageId = value; }
         }
     }
 }
