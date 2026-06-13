@@ -19,25 +19,23 @@ namespace SNUS.SensorClient.Services
             _httpClient = new HttpClient();
         }
 
-        public async Task<bool> SendReadingAsync(SensorReadingRequestDto readingDto)
+        public async Task<(bool Success, string? ErrorMessage)> SendReadingAsync(SensorReadingRequestDto readingDto)
         {
             try
             {
                 HttpResponseMessage response = await _httpClient.PostAsJsonAsync(_baseAddress, readingDto);
-
                 if (response.IsSuccessStatusCode)
                 {
-                    return true;
+                    return (true, null);
                 }
-
                 string errorContent = await response.Content.ReadAsStringAsync();
                 Console.WriteLine($"[SERVER GREŠKA] Status: {response.StatusCode}, Detalji: {errorContent}");
-                return false;
+                return (false, errorContent);
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"[KOMUNIKACIJA GREŠKA] Nije moguće kontaktirati server. Poruka: {ex.Message}");
-                return false;
+                return (false, null);
             }
         }
     }

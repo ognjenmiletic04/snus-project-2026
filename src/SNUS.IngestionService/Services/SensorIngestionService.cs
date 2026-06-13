@@ -5,6 +5,7 @@ using SNUS.Shared.DTOs;
 using SNUS.Shared.Enums;
 using System.Security.Cryptography;
 using System.Text;
+using System.Collections.Concurrent;
 
 namespace SNUS.IngestionService.Services
 {
@@ -12,6 +13,10 @@ namespace SNUS.IngestionService.Services
     {
         private readonly AppDbContext dbContext;
         private readonly ILogger<SensorIngestionService> logger;
+
+        private static readonly ConcurrentDictionary<string, List<DateTime>> _requestHistory = new();
+        private const int MAX_REQUESTS_PER_SECOND = 10;
+        private const int BLOCK_DURATION_SECONDS = 30;
 
         public SensorIngestionService(
             AppDbContext dbContext,
@@ -47,8 +52,55 @@ namespace SNUS.IngestionService.Services
             {
                 request.TimestampUtc = now;
             }
+            Sensor? sensor = await dbContext.Sensors
+                .FirstOrDefaultAsync(x => x.ExternalId == externalSensorId, cancellationToken);
 
-            // ==================== KRIPTO VERIFIKACIJA I DEKRIPCIJA ====================
+            if (sensor is not null &&
+                sensor.BlockedUntilUtc.HasValue &&
+                sensor.BlockedUntilUtc.Value > now)
+            {
+                logger.LogWarning($"[BLOKADA] Zahtev odbačen. Senzor {externalSensorId} je blokiran do: {sensor.BlockedUntilUtc.Value:HH:mm:ss}");
+                return new IngestResponseDto
+                {
+                    Success = false,
+                    SensorId = externalSensorId,
+                    Message = $"Sensor is temporarily blocked due to DoS protection until {sensor.BlockedUntilUtc.Value:O}."
+                };
+            }
+
+            var timestamps = _requestHistory.GetOrAdd(externalSensorId, _ => new List<DateTime>());
+
+            lock (timestamps)
+            {
+
+                timestamps.RemoveAll(t => t < now.AddSeconds(-1));
+
+                if (timestamps.Count >= MAX_REQUESTS_PER_SECOND)
+                {
+                    logger.LogCritical($"[DoS NAPAD DETEKTOVAN] Senzor {externalSensorId} je poslao preko {MAX_REQUESTS_PER_SECOND} poruka u sekundi! Pokrećem blokadu od {BLOCK_DURATION_SECONDS}s.");
+
+                    if (sensor is not null)
+                    {
+                        sensor.BlockedUntilUtc = now.AddSeconds(BLOCK_DURATION_SECONDS);
+                        sensor.IsActive = false;
+                    }
+
+                    timestamps.Clear();
+
+                    dbContext.SaveChanges();
+
+                    return new IngestResponseDto
+                    {
+                        Success = false,
+                        SensorId = externalSensorId,
+                        Message = $"DoS attack detected! Sensor is now blocked for {BLOCK_DURATION_SECONDS} seconds."
+                    };
+                }
+
+                timestamps.Add(now);
+            }
+
+
 
             if (string.IsNullOrEmpty(request.PublicKey) ||
                 string.IsNullOrEmpty(request.DigitalSignature) ||
@@ -77,22 +129,6 @@ namespace SNUS.IngestionService.Services
             logger.LogInformation($"[BEZBEDNOST] Uspešan potpis i dekripcija za {externalSensorId}. Sigurna Temp: {decryptedTemperature}°C");
             request.Temperature = decryptedTemperature;
 
-            // ==========================================================================
-
-            Sensor? sensor = await dbContext.Sensors
-                .FirstOrDefaultAsync(x => x.ExternalId == externalSensorId, cancellationToken);
-
-            if (sensor is not null &&
-                sensor.BlockedUntilUtc.HasValue &&
-                sensor.BlockedUntilUtc.Value > now)
-            {
-                return new IngestResponseDto
-                {
-                    Success = false,
-                    SensorId = externalSensorId,
-                    Message = $"Sensor is temporarily blocked until {sensor.BlockedUntilUtc.Value:O}."
-                };
-            }
 
             if (sensor is not null)
             {
@@ -130,7 +166,7 @@ namespace SNUS.IngestionService.Services
             SensorReading reading = new SensorReading
             {
                 Sensor = sensor,
-                Temperature = request.Temperature, 
+                Temperature = request.Temperature,
                 MeasuredAtUtc = request.TimestampUtc,
                 ReceivedAtUtc = now,
                 MessageId = request.MessageId,
@@ -191,7 +227,6 @@ namespace SNUS.IngestionService.Services
                 Message = "Reading verified, decrypted and stored successfully."
             };
         }
-
 
         private bool VerifyAndDecrypt(SensorReadingRequestDto dto, out double decryptedTemperature)
         {

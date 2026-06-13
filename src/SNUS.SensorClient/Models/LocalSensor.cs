@@ -1,8 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using SNUS.Shared.Enums;
 
 namespace SNUS.SensorClient.Models
@@ -46,7 +42,6 @@ namespace SNUS.SensorClient.Models
             return _messageCounter;
         }
 
-       
         public void SyncMessageCounter(long lastServerId)
         {
             if (lastServerId >= _messageCounter)
@@ -58,6 +53,11 @@ namespace SNUS.SensorClient.Models
         public bool IsBlocked()
         {
             return BlockedUntilUtc.HasValue && BlockedUntilUtc.Value > DateTime.UtcNow;
+        }
+
+        public void UspostaviBlokadu(int sekunde)
+        {
+            BlockedUntilUtc = DateTime.UtcNow.AddSeconds(sekunde);
         }
 
         public AlarmPriority EvaluateAlarm(double temperature)

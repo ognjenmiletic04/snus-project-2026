@@ -6,6 +6,8 @@ class Program
     {
         Console.Title = "SNUS - Sensor Client Simulator";
         Console.WriteLine("=== SNUS SENSOR SIMULATOR LOKALNE MREŽE ===");
+        Console.WriteLine("Pritisni [X] za Kriptografski napad (Loš potpis)");
+        Console.WriteLine("Pritisni [Y] za DDoS napad (Preko 10 poruka u sekundi)");
 
         var httpClient = new SensorHttpClient();
         var simulator = new SensorSimulator(httpClient);
@@ -20,11 +22,18 @@ class Program
             {
                 simulator.TriggerTemporaryBlock();
             }
+
             if (keyInfo.Key == ConsoleKey.X)
             {
                 var attacker = new MaliciousSensorSimulator(httpClient);
-                await attacker.AttackSystemAsync();
+                await attacker.AttackWithBadSignatureAsync(); 
             }
+            if (keyInfo.Key == ConsoleKey.Y)
+            {
+                var attacker = new MaliciousSensorSimulator(httpClient);
+                await attacker.AttackWithDDoSAsync(); 
+            }
+
         }
     }
 }

@@ -7,7 +7,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using SNUS.SensorClient.Models;
-using SNUS.Shared.Enums; 
+using SNUS.Shared.Enums;
 
 namespace SNUS.SensorClient.Services
 {
@@ -17,7 +17,7 @@ namespace SNUS.SensorClient.Services
         private readonly Dictionary<string, CancellationTokenSource> _activeTasks;
         private readonly object _lock = new object();
         private readonly HttpClient _httpClient;
-        private readonly string _serverUrl = "http://localhost:5225/api/ingest"; 
+        private readonly string _serverUrl = "http://localhost:5225/api/ingest";
 
         public DynamicSensorSimulator(List<LocalSensor> sensors)
         {
@@ -31,7 +31,7 @@ namespace SNUS.SensorClient.Services
             while (!systemToken.IsCancellationRequested)
             {
                 BalanceActiveSensors();
-                await Task.Delay(1000, systemToken); 
+                await Task.Delay(1000, systemToken);
             }
         }
 
@@ -39,7 +39,6 @@ namespace SNUS.SensorClient.Services
         {
             lock (_lock)
             {
-          
                 var blockedSensorIds = _allSensors
                     .Where(s => s.IsBlocked())
                     .Select(s => s.Id)
@@ -55,7 +54,6 @@ namespace SNUS.SensorClient.Services
                     }
                 }
 
-           
                 int currentActiveCount = _activeTasks.Count;
 
                 if (currentActiveCount < 5)
@@ -85,7 +83,11 @@ namespace SNUS.SensorClient.Services
             {
                 while (!token.IsCancellationRequested)
                 {
- 
+                    if (sensor.IsBlocked())
+                    {
+                        break;
+                    }
+
                     double temperature = sensor.GenerateRandomTemperature();
                     AlarmPriority priority = sensor.EvaluateAlarm(temperature);
                     int msgId = sensor.GetNextMessageId();
@@ -116,7 +118,6 @@ namespace SNUS.SensorClient.Services
 
                     try
                     {
-
                         var response = await _httpClient.PostAsJsonAsync(_serverUrl, dto, token);
 
                         if (!response.IsSuccessStatusCode)
@@ -125,6 +126,20 @@ namespace SNUS.SensorClient.Services
                             Console.ForegroundColor = ConsoleColor.DarkRed;
                             Console.WriteLine($"[SERVER GRESKA] Status: {response.StatusCode}, Detalji: {greskaDetonacija}");
                             Console.ResetColor();
+
+                            if (greskaDetonacija.Contains("DoS attack") || greskaDetonacija.Contains("temporarily blocked"))
+                            {
+                                Console.ForegroundColor = ConsoleColor.Red;
+                                Console.WriteLine($"[KLIJENT] Primorano gašenje niti za {sensor.Id} zbog blokade na serveru.");
+                                Console.ResetColor();
+
+                                lock (_lock)
+                                {
+                                    sensor.UspostaviBlokadu(30);
+                                }
+
+                                break;
+                            }
                         }
                     }
                     catch (Exception ex)
@@ -138,7 +153,17 @@ namespace SNUS.SensorClient.Services
             }
             catch (TaskCanceledException)
             {
-
+                //normalno gasenje
+            }
+            finally
+            {
+                lock (_lock)
+                {
+                    if (_activeTasks.ContainsKey(sensor.Id))
+                    {
+                        _activeTasks.Remove(sensor.Id);
+                    }
+                }
             }
         }
 
@@ -153,7 +178,7 @@ namespace SNUS.SensorClient.Services
                     Console.ForegroundColor = ConsoleColor.Yellow;
                     break;
                 case AlarmPriority.Priority2:
-                    Console.ForegroundColor = ConsoleColor.DarkYellow; 
+                    Console.ForegroundColor = ConsoleColor.DarkYellow;
                     break;
                 case AlarmPriority.Priority3:
                     Console.ForegroundColor = ConsoleColor.Red;

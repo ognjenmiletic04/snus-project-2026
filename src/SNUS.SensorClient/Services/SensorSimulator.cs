@@ -152,9 +152,23 @@ namespace SNUS.SensorClient.Services
                         PublicKey = publicKey
                     };
 
-                    await _httpClient.SendReadingAsync(dto);
+                    var (success, errorMessage) = await _httpClient.SendReadingAsync(dto);
 
-                   
+                    if (!success && errorMessage != null &&
+                        (errorMessage.Contains("DoS attack") || errorMessage.Contains("temporarily blocked")))
+                    {
+                        lock (_lock)
+                        {
+                            sensor.UspostaviBlokadu(30);
+                        }
+
+                        Console.ForegroundColor = ConsoleColor.Red;
+                        Console.WriteLine($"[KLIJENT] {sensor.Id} blokiran 30s zbog DoS zaštite na serveru. Gasim task.");
+                        Console.ResetColor();
+
+                        return; 
+                    }
+
                     int delaySeconds = random.Next(2, 6);
                     await Task.Delay(delaySeconds * 1000, token);
                 }
