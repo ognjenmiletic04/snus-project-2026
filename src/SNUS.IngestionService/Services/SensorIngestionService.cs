@@ -3,6 +3,8 @@ using SNUS.Persistence;
 using SNUS.Persistence.Entities;
 using SNUS.Shared.DTOs;
 using SNUS.Shared.Enums;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace SNUS.IngestionService.Services
 {
@@ -25,11 +27,7 @@ namespace SNUS.IngestionService.Services
         {
             if (string.IsNullOrWhiteSpace(request.SensorId))
             {
-                return new IngestResponseDto
-                {
-                    Success = false,
-                    Message = "SensorId is required."
-                };
+                return new IngestResponseDto { Success = false, Message = "SensorId is required." };
             }
 
             if (request.MessageId <= 0)
@@ -49,6 +47,37 @@ namespace SNUS.IngestionService.Services
             {
                 request.TimestampUtc = now;
             }
+
+            // ==================== KRIPTO VERIFIKACIJA I DEKRIPCIJA ====================
+
+            if (string.IsNullOrEmpty(request.PublicKey) ||
+                string.IsNullOrEmpty(request.DigitalSignature) ||
+                string.IsNullOrEmpty(request.EncryptedPayload))
+            {
+                logger.LogWarning($"[BEZBEDNOST] Odbijen zahtev za senzor {externalSensorId}. Nedostaju kriptografski podaci!");
+                return new IngestResponseDto
+                {
+                    Success = false,
+                    SensorId = externalSensorId,
+                    Message = "Security violation: Cryptographic fields are required."
+                };
+            }
+
+            if (!VerifyAndDecrypt(request, out double decryptedTemperature))
+            {
+                logger.LogError($"[BEZBEDNOST] KRITIČNO: Neuspešna verifikacija potpisa ili dekripcija za senzor {externalSensorId}!");
+                return new IngestResponseDto
+                {
+                    Success = false,
+                    SensorId = externalSensorId,
+                    Message = "Security violation: Invalid digital signature or tampered data."
+                };
+            }
+
+            logger.LogInformation($"[BEZBEDNOST] Uspešan potpis i dekripcija za {externalSensorId}. Sigurna Temp: {decryptedTemperature}°C");
+            request.Temperature = decryptedTemperature;
+
+            // ==========================================================================
 
             Sensor? sensor = await dbContext.Sensors
                 .FirstOrDefaultAsync(x => x.ExternalId == externalSensorId, cancellationToken);
@@ -101,7 +130,7 @@ namespace SNUS.IngestionService.Services
             SensorReading reading = new SensorReading
             {
                 Sensor = sensor,
-                Temperature = request.Temperature,
+                Temperature = request.Temperature, 
                 MeasuredAtUtc = request.TimestampUtc,
                 ReceivedAtUtc = now,
                 MessageId = request.MessageId,
@@ -159,8 +188,60 @@ namespace SNUS.IngestionService.Services
                 SensorId = externalSensorId,
                 ReadingId = reading.Id,
                 AlarmPriority = request.AlarmPriority,
-                Message = "Reading stored successfully."
+                Message = "Reading verified, decrypted and stored successfully."
             };
+        }
+
+
+        private bool VerifyAndDecrypt(SensorReadingRequestDto dto, out double decryptedTemperature)
+        {
+            decryptedTemperature = 0;
+            try
+            {
+                byte[] publicKeyBytes = Convert.FromBase64String(dto.PublicKey!);
+                using (ECDsa ecdsa = ECDsa.Create())
+                {
+                    ecdsa.ImportSubjectPublicKeyInfo(publicKeyBytes, out _);
+                    string timestampStr = dto.TimestampUtc.ToString("o");
+                    string dataToVerify = $"{dto.SensorId}|{dto.MessageId}|{dto.EncryptedPayload}|{timestampStr}";
+
+                    byte[] dataBytes = Encoding.UTF8.GetBytes(dataToVerify);
+                    byte[] signatureBytes = Convert.FromBase64String(dto.DigitalSignature!);
+
+                    bool isSignatureValid = ecdsa.VerifyData(dataBytes, signatureBytes, HashAlgorithmName.SHA256);
+                    if (!isSignatureValid)
+                    {
+                        return false;
+                    }
+                }
+                byte[] AesKey = SHA256.HashData(Encoding.UTF8.GetBytes("SuperTajniKljuZaSNUS2026"));
+                byte[] AesIv = new byte[16] { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 };
+
+                using (Aes aes = Aes.Create())
+                {
+                    aes.Key = AesKey;
+                    aes.IV = AesIv;
+                    ICryptoTransform decryptor = aes.CreateDecryptor(aes.Key, aes.IV);
+
+                    byte[] cipherBytes = Convert.FromBase64String(dto.EncryptedPayload!);
+                    using (MemoryStream ms = new MemoryStream(cipherBytes))
+                    {
+                        using (CryptoStream cs = new CryptoStream(ms, decryptor, CryptoStreamMode.Read))
+                        {
+                            using (StreamReader sr = new StreamReader(cs))
+                            {
+                                string plainText = sr.ReadToEnd();
+                                decryptedTemperature = double.Parse(plainText, System.Globalization.CultureInfo.InvariantCulture);
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                return false;
+            }
         }
     }
 }

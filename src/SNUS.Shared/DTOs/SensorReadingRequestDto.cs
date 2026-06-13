@@ -15,6 +15,11 @@ namespace SNUS.Shared.DTOs
         private long messageId;
         private DataQuality dataQuality = DataQuality.GOOD;
         private AlarmPriority alarmPriority = AlarmPriority.None;
+        // kripto
+        public string? EncryptedPayload { get; set; } // sifrovana temperatura
+        public string? DigitalSignature { get; set; }  // digitalni potpis poruke
+        public string? PublicKey { get; set; }         // javni kljuc senzora da bi backend mogao da proveri potpis
+    
 
         public string SensorId
         {
